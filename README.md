@@ -12,7 +12,8 @@ pip install -r requirements.txt
 ## 파일화
 ```
 pip install pyinstaller
-pyinstaller --onefile --noconsole main.py
+pyinstaller --onefile --icon=icon.ico --noconsole server.py
+pyinstaller --onefile --icon=icon.ico client.py
 ```
 
 > ※  환경변수 설정 필수 `C:\Users\"유저명"\AppData\Local\Programs\Python\"파이썬버전"\Scripts`
